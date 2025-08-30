@@ -1,0 +1,47 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Build Docker image
+      run: |
+        docker build -t my-app:latest ./app
+
+    - name: Push to Docker Hub
+      run: |
+        docker tag my-app:latest ${{ secrets.DOCKER_USERNAME }}/my-app:latest
+        docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+        docker push ${{ secrets.DOCKER_USERNAME }}/my-app:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install kubectl & Helm
+      run: |
+        curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+        chmod +x ./kubectl
+        sudo mv ./kubectl /usr/local/bin/kubectl
+        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+    - name: Configure Minikube (Simulated)
+      run: |
+        # In real scenarios, you'd set up a remote cluster
+        echo "Setting up kubeconfig..."
+        mkdir -p ~/.kube
+        echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
+
+    - name: Deploy with Helm
+      run: |
+        helm upgrade --install my-app ./helm-chart \
+          --set image.repository=${{ secrets.DOCKER_USERNAME }}/my-app \
+          --set image.tag=latest
